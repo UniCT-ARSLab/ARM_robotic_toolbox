@@ -8,7 +8,7 @@
 #ifndef INC_MANIPULATOR_H_
 #define INC_MANIPULATOR_H_
 
-#include "se3.h"
+#include "arm_rtb.h"
 
 typedef arm_matrix_instance_f32 	Jacob_mat;
 
