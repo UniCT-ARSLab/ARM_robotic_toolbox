@@ -15,9 +15,11 @@
 void * rtb_allocate(int size);
 void rtb_free(void * ptr);
 
+void mat_print(arm_matrix_instance_f32 * m);
 void mat_multiply_scalar(arm_matrix_instance_f32 * m, float scalar);
 
 #define ARM_MATH_NOMEM			-10
 
+#define MAT_EL(mat,r,c)		(mat).pData[(r) * (mat).numCols + (c)]
 
 #endif /* LIB_CORE_INC_ARM_RTB_H_ */

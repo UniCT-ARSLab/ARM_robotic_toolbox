@@ -8,9 +8,17 @@
 #ifndef INC_MANIPULATOR_H_
 #define INC_MANIPULATOR_H_
 
+#include <stdbool.h>
 #include "arm_rtb.h"
 
 typedef arm_matrix_instance_f32 	Jacob_mat;
+
+typedef struct {
+	SE3_mat *target_pose;
+	SE3_mat error_matrix, ee_inv;
+	float threshold;
+	float gain;
+} t_servo_info;
 
 typedef struct {
 	int	num_links;
@@ -31,10 +39,12 @@ typedef struct {
 
 	SE3_mat new_t, prev_t;
 
-	Jacob_mat jacob0, jacobe;
+	Jacob_mat jacob0, jacobe, jacobe_T;
 
 	SO3_mat  r_ee, r_ee_T, origin_skew, RT_p_hat;
-	arm_matrix_instance_f32 jacob_transform;
+	arm_matrix_instance_f32 jacob_transform, jacobe_T_jacobe, inv_jacobe_T_jacobe, inv_jacobe;
+
+	t_servo_info servo;
 
 } Manipulator;
 

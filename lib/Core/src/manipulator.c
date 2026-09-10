@@ -8,31 +8,11 @@
 
 #include "arm_rtb.h"
 
+#include <assert.h>
 #include <stdio.h>
 
+#define math_success(v)		assert(v == ARM_MATH_SUCCESS)
 //#define TRANSFORM_DEBUG
-
-#define MAT_EL(mat,r,c)		(mat).pData[(r) * (mat).numCols + (c)]
-
-void mat_print(arm_matrix_instance_f32 * m)
-{
-	int r, c;
-	printf("[");
-	for (r = 0; r < m->numRows; r++) {
-		if (r > 0) printf(" ");
-		printf("[");
-		for (c = 0; c < m->numCols; c++) {
-			printf("%6.3f  ", m->pData[r * m->numCols + c]);
-			if (c < m->numCols - 1)
-				printf(",");
-		}
-		if (r < m->numRows)
-			printf("],\n");
-		else
-			printf("]");
-	}
-	printf("]\n");
-}
 
 arm_status manipulator_init(Manipulator * m, int n_links, int n_joints)
 {
@@ -90,6 +70,8 @@ arm_status manipulator_init(Manipulator * m, int n_links, int n_joints)
 	int i;
 	for (i = 0; i < n_links;i++)
 		m->global_transforms[i].pData = NULL;
+
+	m->servo.error_matrix.pData = NULL;
 	return ARM_MATH_SUCCESS;
 }
 
@@ -165,20 +147,46 @@ arm_status manipulator_add_joint_ex(Manipulator * m, SE3_Axis axis, float offset
 
 arm_status manipulator_prepare(Manipulator * m)
 {
+	// the jacobian of the base (jacob0)
 	float * f = rtb_allocate(sizeof(float) * 6 * m->num_joints);
 	if (f == NULL)
 		return ARM_MATH_NOMEM;
 	arm_mat_init_f32(&m->jacob0, 6, m->num_joints, f);
 
+	// the jacobian of the end-effector (jacobe)
 	f = rtb_allocate(sizeof(float) * 6 * m->num_joints);
 	if (f == NULL)
 		return ARM_MATH_NOMEM;
 	arm_mat_init_f32(&m->jacobe, 6, m->num_joints, f);
 
+	// the jacobe transposed
+	f = rtb_allocate(sizeof(float) * 6 * m->num_joints);
+	if (f == NULL)
+		return ARM_MATH_NOMEM;
+	arm_mat_init_f32(&m->jacobe_T, m->num_joints, 6, f);
+
+	// the jacobe transposed * jacobe, useful to compute the pseudo inverse
+	f = rtb_allocate(sizeof(float) * m->num_joints * m->num_joints);
+	if (f == NULL)
+		return ARM_MATH_NOMEM;
+	arm_mat_init_f32(&m->jacobe_T_jacobe, m->num_joints, m->num_joints, f);
+
+	// the inv(jacobe transposed * jacobe), useful to compute the pseudo inverse
+	f = rtb_allocate(sizeof(float) * m->num_joints * m->num_joints);
+	if (f == NULL)
+		return ARM_MATH_NOMEM;
+	arm_mat_init_f32(&m->inv_jacobe_T_jacobe, m->num_joints, m->num_joints, f);
+
+	// the jacobe pseudo inverse
+	f = rtb_allocate(sizeof(float) * 6 * m->num_joints);
+	if (f == NULL)
+		return ARM_MATH_NOMEM;
+	arm_mat_init_f32(&m->inv_jacobe, m->num_joints, 6, f);
+
+	// the matrix useful to transform jacob0 to jacobe
 	f = rtb_allocate(sizeof(float) * 6 * 6);
 	if (f == NULL)
 		return ARM_MATH_NOMEM;
-
 	int i;
 	for (i = 0; i < 36;i++) f[i] = 0.0;
 	arm_mat_init_f32(&m->jacob_transform, 6, 6, f);
@@ -261,9 +269,11 @@ arm_status manipulator_compute_transform(Manipulator * m)
 	return ARM_MATH_SUCCESS;
 }
 
+#define EE	(m->global_transforms[m->num_links - 1])
+
 SE3_mat manipulator_ee_pose(Manipulator * m)
 {
-	return m->global_transforms[m->num_links - 1];
+	return EE;
 }
 
 static void _jacob_make_transform(Manipulator * m, SO3_mat * rot_T, Vector3 * origin)
@@ -319,10 +329,39 @@ arm_status manipulator_jacobians(Manipulator * m)
 		MAT_EL(m->jacob0, 4, i) = j_w_i.y;
 		MAT_EL(m->jacob0, 5, i) = j_w_i.z;
 	}
+	// compute jacobe
 	SE3_basis(&m->global_transforms[m->num_links - 1], &m->r_ee);
-	arm_mat_trans_f32(&m->r_ee, &m->r_ee_T);
+	math_success(arm_mat_trans_f32(&m->r_ee, &m->r_ee_T));
 	_jacob_make_transform(m, &m->r_ee_T, &ee_origin);
-	arm_mat_mult_f32(&m->jacob_transform, &m->jacob0, &m->jacobe);
+	math_success(arm_mat_mult_f32(&m->jacob_transform, &m->jacob0, &m->jacobe));
+
+	// compute JE^T
+	math_success(arm_mat_trans_f32(&m->jacobe, &m->jacobe_T));
+
+	// Compute pinv sx or dx on the basis of num of rows and columns
+	if (m->jacobe.numCols > m->jacobe.numRows) {
+		// pinv dx
+		// compute JE*JE^T
+		math_success(arm_mat_mult_f32(&m->jacobe, &m->jacobe_T, &m->jacobe_T_jacobe));
+
+		// compute inv(JE*JE^T)
+		math_success(arm_mat_inverse_f32(&m->jacobe_T_jacobe, &m->inv_jacobe_T_jacobe));
+
+		// compute JE^T*inv(JE*JE^T)
+		math_success(arm_mat_mult_f32(&m->jacobe_T, &m->inv_jacobe_T_jacobe, &m->inv_jacobe));
+	}
+	else {
+		// pinv sx
+		// compute JE^T*JE
+		math_success(arm_mat_mult_f32(&m->jacobe_T, &m->jacobe, &m->jacobe_T_jacobe));
+
+		// compute inv(JE^T*JE)
+		math_success(arm_mat_inverse_f32(&m->jacobe_T_jacobe, &m->inv_jacobe_T_jacobe));
+
+		// compute inv(JE^T*JE)*JE^T
+		math_success(arm_mat_mult_f32(&m->inv_jacobe_T_jacobe, &m->jacobe_T, &m->inv_jacobe));
+	}
+
 	return ARM_MATH_SUCCESS;
 }
 
@@ -334,4 +373,53 @@ void manipulator_jacob_info(Manipulator * m)
 	mat_print(&m->jacob_transform);
 	printf("Jacobe:\n");
 	mat_print(&m->jacobe);
+}
+
+arm_status manipulator_servo_start(Manipulator * m, SE3_mat * target_pose, float gain, float threshold)
+{
+	if (m->servo.error_matrix.pData == NULL) {
+		if (SE3_I(&m->servo.error_matrix) == ARM_MATH_NOMEM)
+			return ARM_MATH_NOMEM;
+		if (SE3_I(&m->servo.ee_inv) == ARM_MATH_NOMEM)
+			return ARM_MATH_NOMEM;
+	}
+	m->servo.target_pose = target_pose;
+	m->servo.gain = gain;
+	m->servo.threshold = threshold;
+	return ARM_MATH_SUCCESS;
+}
+
+bool manipulator_servo_control(Manipulator * m, float * joint_speeds)
+{
+	float err_roll, err_pitch, err_yaw;
+	float ee_speed_vector[6], error_vector[6];
+	math_success(arm_mat_inverse_f32(&EE, &m->servo.ee_inv));
+	math_success(arm_mat_mult_f32(&m->servo.ee_inv, m->servo.target_pose, &m->servo.error_matrix));
+	SE3_to_rpy(&m->servo.error_matrix, &err_roll, &err_pitch, &err_yaw);
+	error_vector[0] = SE3(&m->servo.error_matrix, 0, 3);
+	error_vector[1] = SE3(&m->servo.error_matrix, 1, 3);
+	error_vector[2] = SE3(&m->servo.error_matrix, 2, 3);
+	error_vector[3] = err_yaw;
+	error_vector[4] = err_pitch;
+	error_vector[5] = err_roll;
+
+	int i;
+	float norm = 0;
+	for (i = 0; i < 6;i++) {
+		ee_speed_vector[i] = error_vector[i] * m->servo.gain;
+		norm += fabs(ee_speed_vector[i]);
+	}
+
+	arm_matrix_instance_f32	svec;
+	svec.numCols = 1;
+	svec.numRows = 6;
+	svec.pData = ee_speed_vector;
+
+	arm_matrix_instance_f32	dq;
+	dq.numCols = 1;
+	dq.numRows = m->num_joints;
+	dq.pData = joint_speeds;
+	math_success(arm_mat_mult_f32(&m->inv_jacobe, &svec, &dq));
+
+	return norm < m->servo.threshold;
 }

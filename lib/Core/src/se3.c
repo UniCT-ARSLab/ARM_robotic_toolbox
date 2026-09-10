@@ -122,6 +122,14 @@ arm_status SE3_Multiply(SE3_mat * result, SE3_mat * a, SE3_mat * b)
 }
 
 
+arm_status SE3_copy(SE3_mat * result, SE3_mat * a)
+{
+	if (SE3_I(result) == ARM_MATH_NOMEM)
+		return ARM_MATH_NOMEM;
+	memcpy(result->pData, a->pData, 16 * sizeof(float));
+	return ARM_MATH_SUCCESS;
+}
+
 void SE3_copy_N(SE3_mat * result, SE3_mat * a)
 {
 	memcpy(result->pData, a->pData, 16 * sizeof(float));
@@ -166,6 +174,13 @@ void SE3_basis_z(SE3_mat * mat, Vector3 * v)
 	v->x = SE3(mat, 0, 2);
 	v->y = SE3(mat, 1, 2);
 	v->z = SE3(mat, 2, 2);
+}
+
+void SE3_to_rpy(SE3_mat * mat, float * roll, float * pitch, float * yaw)
+{
+	*yaw = asin(-SE3(mat,2,0));
+	*pitch = atan2(SE3(mat,1,0), SE3(mat,0,0));
+	*roll = atan2(SE3(mat,2,1), SE3(mat,2,2));
 }
 
 #define BLUE_COLOR "\033[34m"
