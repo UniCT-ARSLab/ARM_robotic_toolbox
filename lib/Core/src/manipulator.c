@@ -145,6 +145,8 @@ arm_status manipulator_add_joint_ex(Manipulator * m, SE3_Axis axis, float offset
 	return ARM_MATH_SUCCESS;
 }
 
+#define LAMBDA_2 1e-4
+
 arm_status manipulator_prepare(Manipulator * m)
 {
 	// the jacobian of the base (jacob0)
@@ -209,6 +211,7 @@ arm_status manipulator_set_joints(Manipulator * m, float * joints)
 {
 	int i;
 	for (i = 0; i < m->num_joints;i++) {
+		printf("%.3f ", joints[i]);
 		float a = joints[i];
 		a = a * m->joint_signs[i] + m->joint_offsets[i];
 		m->joint_angles[i] = a;
@@ -228,11 +231,28 @@ arm_status manipulator_set_joints(Manipulator * m, float * joints)
 			break;
 		}
 	}
+	printf("\n");
 	int ret = manipulator_compute_transform(m);
 	if (ret != ARM_MATH_SUCCESS)
 		return ret;
 	return manipulator_jacobians(m);
 }
+
+arm_status manipulator_move_joints(Manipulator * m, float delta_t, float * joint_speeds)
+{
+	// FIXME! WEIRD!!!
+	float q[20];
+	int i;
+	for (i = 0; i < m->num_joints;i++) {
+		float a = m->joint_angles[i];
+		a = (a - m->joint_offsets[i]) * m->joint_signs[i];
+
+		q[i] = a + joint_speeds[i] * delta_t;
+	}
+	return manipulator_set_joints(m, q);
+}
+
+
 
 arm_status manipulator_compute_transform(Manipulator * m)
 {
@@ -338,29 +358,26 @@ arm_status manipulator_jacobians(Manipulator * m)
 	// compute JE^T
 	math_success(arm_mat_trans_f32(&m->jacobe, &m->jacobe_T));
 
-	// Compute pinv sx or dx on the basis of num of rows and columns
-	if (m->jacobe.numCols > m->jacobe.numRows) {
-		// pinv dx
-		// compute JE*JE^T
-		math_success(arm_mat_mult_f32(&m->jacobe, &m->jacobe_T, &m->jacobe_T_jacobe));
+	// pinv sx
+	// compute JE^T*JE
+	math_success(arm_mat_mult_f32(&m->jacobe_T, &m->jacobe, &m->jacobe_T_jacobe));
 
-		// compute inv(JE*JE^T)
-		math_success(arm_mat_inverse_f32(&m->jacobe_T_jacobe, &m->inv_jacobe_T_jacobe));
-
-		// compute JE^T*inv(JE*JE^T)
-		math_success(arm_mat_mult_f32(&m->jacobe_T, &m->inv_jacobe_T_jacobe, &m->inv_jacobe));
+	// compute inv(JE^T*JE)
+retry:
+	arm_status ret = arm_mat_inverse_f32(&m->jacobe_T_jacobe, &m->inv_jacobe_T_jacobe);
+	if (ret == ARM_MATH_SINGULAR) {
+		printf("singularity in computing psedo-inverse\n");
+		int i;
+		for (i = 0; i < m->num_joints;i++) {
+			MAT_EL(m->jacobe_T_jacobe, i, i) += LAMBDA_2;
+		}
+		goto retry;
+		for (;;) ;
 	}
-	else {
-		// pinv sx
-		// compute JE^T*JE
-		math_success(arm_mat_mult_f32(&m->jacobe_T, &m->jacobe, &m->jacobe_T_jacobe));
+	math_success(ret);
 
-		// compute inv(JE^T*JE)
-		math_success(arm_mat_inverse_f32(&m->jacobe_T_jacobe, &m->inv_jacobe_T_jacobe));
-
-		// compute inv(JE^T*JE)*JE^T
-		math_success(arm_mat_mult_f32(&m->inv_jacobe_T_jacobe, &m->jacobe_T, &m->inv_jacobe));
-	}
+	// compute inv(JE^T*JE)*JE^T
+	math_success(arm_mat_mult_f32(&m->inv_jacobe_T_jacobe, &m->jacobe_T, &m->inv_jacobe));
 
 	return ARM_MATH_SUCCESS;
 }

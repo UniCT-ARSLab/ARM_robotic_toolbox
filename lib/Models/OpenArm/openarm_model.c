@@ -11,6 +11,8 @@ Manipulator openarm_model;
 
 #include <stdio.h>
 
+#include "stm32h7xx_hal.h"
+
 #define check(s)	\
 	if (s == ARM_MATH_NOMEM) { \
 		printf("Not enough memory\n");	\
@@ -76,6 +78,7 @@ arm_status openarm_model_init(void)
 	return ARM_MATH_SUCCESS;
 }
 
+void wait_char(void);
 
 void openarm_model_test(void)
 {
@@ -86,7 +89,37 @@ void openarm_model_test(void)
 	//float q[] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 	manipulator_set_joints(&openarm_model, q);
 	SE3_mat ee = manipulator_ee_pose(&openarm_model);
-	SE3_print(&ee);
 	manipulator_jacob_info(&openarm_model);
+	printf("Pinv(jacobe):\n");
+	mat_print(&openarm_model.inv_jacobe);
+	printf("End-Effector:\n");
+	SE3_print(&ee);
+
+	float dq[7];
+	SE3_mat target;
+	SE3_copy(&target, &ee);
+	SE3(&target, 2, 3) = SE3(&target, 2, 3) + 0.2;
+	printf("Target Pose:\n");
+	SE3_print(&target);
+
+	printf("Starting Servoing:\n");
+	assert(manipulator_servo_start(&openarm_model,&target, 1.0, 0.01) == ARM_MATH_SUCCESS);
+
+	while (1) {
+		uint32_t st = HAL_GetTick();
+		bool ret = manipulator_servo_control(&openarm_model, dq);
+		manipulator_move_joints(&openarm_model, 0.01, dq);
+		uint32_t en = HAL_GetTick();
+		printf("elapsed: %ld ms, %d:", (en - st), ret);
+		int i;
+		for (i = 0; i < 7;i++)
+			printf("%.3f ", dq[i]);
+		printf("\n");
+		if (ret)
+			break;
+		SE3_mat ee = manipulator_ee_pose(&openarm_model);
+		SE3_print(&ee);
+		//wait_char();
+	}
 }
 

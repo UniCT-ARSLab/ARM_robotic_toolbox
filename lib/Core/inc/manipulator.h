@@ -56,9 +56,13 @@ arm_status manipulator_add_R_link(Manipulator * m, float angle, SE3_Axis axis);
 arm_status manipulator_add_joint(Manipulator * m, SE3_Axis axis);
 arm_status manipulator_add_joint_ex(Manipulator * m, SE3_Axis axis, float offset, float sign);
 arm_status manipulator_set_joints(Manipulator * m, float * joints);
+arm_status manipulator_move_joints(Manipulator * m, float delta_t, float * joint_speeds);
 arm_status manipulator_compute_transform(Manipulator * m);
 SE3_mat manipulator_ee_pose(Manipulator * m);
 arm_status manipulator_jacobians(Manipulator * m);
 void manipulator_jacob_info(Manipulator * m);
+arm_status manipulator_servo_start(Manipulator * m, SE3_mat * target_pose, float gain, float threshold);
+bool manipulator_servo_control(Manipulator * m, float * joint_speeds);
+
 
 #endif /* INC_MANIPULATOR_H_ */
