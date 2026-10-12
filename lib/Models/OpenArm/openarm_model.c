@@ -5,7 +5,7 @@
  *      Author: corrado
  */
 
-#include "manipulator.h"
+#include "openarm_model.h"
 
 Manipulator openarm_model;
 
@@ -79,6 +79,18 @@ arm_status openarm_model_init(void)
 }
 
 void wait_char(void);
+
+void openarm_model_set_joints(float * q)
+{
+	manipulator_set_joints(&openarm_model, q);
+}
+
+void openarm_model_show_ee_pose(void)
+{
+	SE3_mat ee = manipulator_ee_pose(&openarm_model);
+	printf("End-Effector:\n");
+	SE3_print(&ee);
+}
 
 void openarm_model_test(void)
 {
