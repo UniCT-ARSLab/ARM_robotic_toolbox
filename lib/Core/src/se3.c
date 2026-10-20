@@ -94,6 +94,31 @@ arm_status SE3_Trans_N(SE3_mat * mat, float * xyz)
 	return ARM_MATH_SUCCESS;
 }
 
+arm_status SE3_from_Quat_N(SE3_mat * mat, Quaternion * q)
+{
+	SE3(mat, 0, 0) = 1 - 2 * (q->y*q->y + q->z*q->z);
+	SE3(mat, 0, 1) = 2 * (q->x*q->y - q->w*q->z);
+	SE3(mat, 0, 2) = 2 * (q->x*q->z + q->w*q->y);
+	SE3(mat, 0, 3) = 0;
+
+	SE3(mat, 1, 0) = 2 * (q->x*q->y + q->w*q->z);
+	SE3(mat, 1, 1) = 1 - 2 * (q->x*q->x + q->z*q->z);
+	SE3(mat, 1, 2) = 2 * (q->y*q->z - q->w*q->x);
+	SE3(mat, 1, 3) = 0;
+
+	SE3(mat, 2, 0) = 2 * (q->x*q->z - q->w*q->y);
+	SE3(mat, 2, 1) = 2 * (q->y*q->z + q->w*q->x);
+	SE3(mat, 2, 2) = 1 - 2 * (q->y*q->y + q->x*q->x);
+	SE3(mat, 2, 3) = 0;
+
+	SE3(mat, 3, 0) = 0;
+	SE3(mat, 3, 1) = 0;
+	SE3(mat, 3, 2) = 0;
+	SE3(mat, 3, 3) = 1;
+
+	return ARM_MATH_SUCCESS;
+}
+
 arm_status SE3_I(SE3_mat * mat)
 {
 	float * pData = rtb_allocate(sizeof(float) * 16);
@@ -142,6 +167,13 @@ void SE3_origin(SE3_mat * mat, Vector3 * v)
 	v->z = SE3(mat, 2, 3);
 }
 
+void SE3_set_origin(SE3_mat * mat, Vector3 * v)
+{
+	SE3(mat, 0, 3) = v->x;
+	SE3(mat, 1, 3) = v->y;
+	SE3(mat, 2, 3) = v->z;
+}
+
 void SE3_basis(SE3_mat * mat,SO3_mat * basis)
 {
 	SO3(basis, 0, 0) = SE3(mat, 0, 0);
@@ -178,8 +210,9 @@ void SE3_basis_z(SE3_mat * mat, Vector3 * v)
 
 void SE3_to_rpy(SE3_mat * mat, float * roll, float * pitch, float * yaw)
 {
-	*yaw = asin(-SE3(mat,2,0));
-	*pitch = atan2(SE3(mat,1,0), SE3(mat,0,0));
+	// zyx sequence
+	*yaw = atan2(SE3(mat,1,0), SE3(mat,0,0));
+	*pitch = asin(-SE3(mat,2,0));
 	*roll = atan2(SE3(mat,2,1), SE3(mat,2,2));
 }
 

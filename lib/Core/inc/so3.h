@@ -10,6 +10,7 @@
 
 #include "arm_math.h"
 #include "vector3.h"
+#include "quaternion.h"
 
 #define SO3(m,row,col)		m->pData[row * 3 + col]
 

@@ -5,6 +5,7 @@
  *      Author: corrado
  */
 
+void wait_char(void);
 
 #include "arm_rtb.h"
 
@@ -161,6 +162,7 @@ arm_status manipulator_prepare(Manipulator * m)
 		return ARM_MATH_NOMEM;
 	arm_mat_init_f32(&m->jacobe, 6, m->num_joints, f);
 
+	// -------------------------------------------------
 	// the jacobe transposed
 	f = rtb_allocate(sizeof(float) * 6 * m->num_joints);
 	if (f == NULL)
@@ -178,6 +180,31 @@ arm_status manipulator_prepare(Manipulator * m)
 	if (f == NULL)
 		return ARM_MATH_NOMEM;
 	arm_mat_init_f32(&m->inv_jacobe_T_jacobe, m->num_joints, m->num_joints, f);
+	// -------------------------------------------------
+
+
+	// -------------------------------------------------
+	// ------------ for SVD algorithm ------------------
+	f = rtb_allocate(sizeof(float) * 6 * m->num_joints);
+	if (f == NULL)
+		return ARM_MATH_NOMEM;
+	arm_mat_init_f32(&m->W, m->num_joints, 6, f);
+
+	f = rtb_allocate(sizeof(float) * m->num_joints * m->num_joints);
+	if (f == NULL)
+		return ARM_MATH_NOMEM;
+	arm_mat_init_f32(&m->V, m->num_joints, m->num_joints, f);
+
+	m->S_inv = rtb_allocate(sizeof(float) * m->num_joints);
+	if (f == NULL)
+		return ARM_MATH_NOMEM;
+
+	f = rtb_allocate(sizeof(float) * 6 * m->num_joints);
+	if (f == NULL)
+		return ARM_MATH_NOMEM;
+	arm_mat_init_f32(&m->U, m->num_joints, 6, f);
+
+	// -------------------------------------------------
 
 	// the jacobe pseudo inverse
 	f = rtb_allocate(sizeof(float) * 6 * m->num_joints);
@@ -211,7 +238,7 @@ arm_status manipulator_set_joints(Manipulator * m, float * joints)
 {
 	int i;
 	for (i = 0; i < m->num_joints;i++) {
-		printf("%.3f ", joints[i]);
+		//printf("%.3f ", joints[i]);
 		float a = joints[i];
 		a = a * m->joint_signs[i] + m->joint_offsets[i];
 		m->joint_angles[i] = a;
@@ -231,7 +258,7 @@ arm_status manipulator_set_joints(Manipulator * m, float * joints)
 			break;
 		}
 	}
-	printf("\n");
+	//printf("\n");
 	int ret = manipulator_compute_transform(m);
 	if (ret != ARM_MATH_SUCCESS)
 		return ret;
@@ -355,6 +382,10 @@ arm_status manipulator_jacobians(Manipulator * m)
 	_jacob_make_transform(m, &m->r_ee_T, &ee_origin);
 	math_success(arm_mat_mult_f32(&m->jacob_transform, &m->jacob0, &m->jacobe));
 
+#ifdef USE_SVD
+	jacobe_pseudo_inverse(m);
+#else
+
 	// compute JE^T
 	math_success(arm_mat_trans_f32(&m->jacobe, &m->jacobe_T));
 
@@ -378,6 +409,7 @@ retry:
 
 	// compute inv(JE^T*JE)*JE^T
 	math_success(arm_mat_mult_f32(&m->inv_jacobe_T_jacobe, &m->jacobe_T, &m->inv_jacobe));
+#endif
 
 	return ARM_MATH_SUCCESS;
 }
@@ -416,15 +448,22 @@ bool manipulator_servo_control(Manipulator * m, float * joint_speeds)
 	error_vector[0] = SE3(&m->servo.error_matrix, 0, 3);
 	error_vector[1] = SE3(&m->servo.error_matrix, 1, 3);
 	error_vector[2] = SE3(&m->servo.error_matrix, 2, 3);
-	error_vector[3] = err_yaw;
+	error_vector[3] = err_roll;
 	error_vector[4] = err_pitch;
-	error_vector[5] = err_roll;
+	error_vector[5] = err_yaw;
+
+	arm_matrix_instance_f32	err_vec;
+	err_vec.numCols = 1;
+	err_vec.numRows = 6;
+	err_vec.pData = error_vector;
+
+	//mat_print(&err_vec);
 
 	int i;
 	float norm = 0;
 	for (i = 0; i < 6;i++) {
 		ee_speed_vector[i] = error_vector[i] * m->servo.gain;
-		norm += fabs(ee_speed_vector[i]);
+		norm += fabs(error_vector[i]);
 	}
 
 	arm_matrix_instance_f32	svec;
@@ -432,11 +471,18 @@ bool manipulator_servo_control(Manipulator * m, float * joint_speeds)
 	svec.numRows = 6;
 	svec.pData = ee_speed_vector;
 
+	//mat_print(&svec);
+	//mat_print(&m->inv_jacobe);
+
 	arm_matrix_instance_f32	dq;
 	dq.numCols = 1;
 	dq.numRows = m->num_joints;
 	dq.pData = joint_speeds;
 	math_success(arm_mat_mult_f32(&m->inv_jacobe, &svec, &dq));
 
+	//mat_print(&dq);
+
+	printf("NORM: %f, %f\n\r", norm, m->servo.threshold);
+	//wait_char();
 	return norm < m->servo.threshold;
 }

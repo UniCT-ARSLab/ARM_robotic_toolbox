@@ -85,12 +85,87 @@ void openarm_model_set_joints(float * q)
 	manipulator_set_joints(&openarm_model, q);
 }
 
+void openarm_jacob_info(void)
+{
+	manipulator_jacob_info(&openarm_model);
+}
+
 void openarm_model_show_ee_pose(void)
 {
 	SE3_mat ee = manipulator_ee_pose(&openarm_model);
 	printf("End-Effector:\n");
 	SE3_print(&ee);
 }
+
+void openarm_model_servo_drive3(float * xyz)
+{
+	SE3_mat ee = manipulator_ee_pose(&openarm_model);
+
+	SE3_mat target;
+	SE3_copy(&target, &ee);
+
+	Vector3 new_origin;
+	vector3_init_v(&new_origin, xyz);
+	SE3_set_origin(&target, &new_origin);
+
+	printf("Target Pose:\n");
+	SE3_print(&target);
+
+	printf("Starting Servoing:\n");
+	assert(manipulator_servo_start(&openarm_model,&target, 1.0, 0.05) == ARM_MATH_SUCCESS);
+
+	float dq[7];
+
+	while (1) {
+		uint32_t st = HAL_GetTick();
+		bool ret = manipulator_servo_control(&openarm_model, dq);
+		manipulator_move_joints(&openarm_model, 0.001, dq);
+		uint32_t en = HAL_GetTick();
+		//printf("elapsed: %ld ms, %d:", (en - st), ret);
+//		int i;
+//		for (i = 0; i < 7;i++)
+//			printf("%.3f ", dq[i]);
+//		printf("\n");
+		if (ret)
+			break;
+		SE3_mat ee = manipulator_ee_pose(&openarm_model);
+		//SE3_print(&ee);
+		//wait_char();
+	}
+}
+
+
+void openarm_model_servo_drive(SE3_mat * target)
+{
+	printf("Target Pose:\n");
+	SE3_print(target);
+
+	printf("Starting Servoing:\n");
+	assert(manipulator_servo_start(&openarm_model,target, 5.0, 0.01) == ARM_MATH_SUCCESS);
+
+	float dq[7];
+
+	float delta_t = 1 / 60.0;
+
+	while (1) {
+		uint32_t st = HAL_GetTick();
+		bool ret = manipulator_servo_control(&openarm_model, dq);
+		manipulator_move_joints(&openarm_model, delta_t, dq);
+		uint32_t en = HAL_GetTick();
+		HAL_Delay(delta_t * 1000);
+		//printf("elapsed: %ld ms, %d:", (en - st), ret);
+//		int i;
+//		for (i = 0; i < 7;i++)
+//			printf("%.3f ", dq[i]);
+//		printf("\n");
+		if (ret)
+			break;
+		SE3_mat ee = manipulator_ee_pose(&openarm_model);
+		//SE3_print(&ee);
+		//wait_char();
+	}
+}
+
 
 void openarm_model_test(void)
 {
@@ -124,7 +199,8 @@ void openarm_model_test(void)
 		uint32_t en = HAL_GetTick();
 		printf("elapsed: %ld ms, %d:", (en - st), ret);
 		int i;
-		for (i = 0; i < 7;i++)
+		for (i = 0; i < 7;i++)  openarm_model_test();
+
 			printf("%.3f ", dq[i]);
 		printf("\n");
 		if (ret)

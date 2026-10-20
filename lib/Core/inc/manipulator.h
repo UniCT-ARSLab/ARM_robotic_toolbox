@@ -11,6 +11,8 @@
 #include <stdbool.h>
 #include "arm_rtb.h"
 
+//#define USE_SVD
+
 typedef arm_matrix_instance_f32 	Jacob_mat;
 
 typedef struct {
@@ -44,6 +46,9 @@ typedef struct {
 	SO3_mat  r_ee, r_ee_T, origin_skew, RT_p_hat;
 	arm_matrix_instance_f32 jacob_transform, jacobe_T_jacobe, inv_jacobe_T_jacobe, inv_jacobe;
 
+	arm_matrix_instance_f32 W, V, U;
+	float * S_inv;
+
 	t_servo_info servo;
 
 } Manipulator;
@@ -63,6 +68,8 @@ arm_status manipulator_jacobians(Manipulator * m);
 void manipulator_jacob_info(Manipulator * m);
 arm_status manipulator_servo_start(Manipulator * m, SE3_mat * target_pose, float gain, float threshold);
 bool manipulator_servo_control(Manipulator * m, float * joint_speeds);
+
+void jacobe_pseudo_inverse(Manipulator * m);
 
 
 #endif /* INC_MANIPULATOR_H_ */
