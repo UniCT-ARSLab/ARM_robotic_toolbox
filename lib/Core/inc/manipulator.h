@@ -39,7 +39,7 @@ typedef struct {
 	float * joint_offsets;
 	float * joint_signs;
 
-	SE3_mat new_t, prev_t;
+	SE3_mat new_t, prev_t, virtual_robot_temp, segment_start;
 
 	Jacob_mat jacob0, jacobe, jacobe_T;
 

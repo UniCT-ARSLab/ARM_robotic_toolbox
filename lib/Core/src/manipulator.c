@@ -56,6 +56,10 @@ arm_status manipulator_init(Manipulator * m, int n_links, int n_joints)
 		return ARM_MATH_NOMEM;
 	if (SE3_I(&m->prev_t) == ARM_MATH_NOMEM)
 		return ARM_MATH_NOMEM;
+	if (SE3_I(&m->virtual_robot_temp) == ARM_MATH_NOMEM)
+		return ARM_MATH_NOMEM;
+	if (SE3_I(&m->segment_start) == ARM_MATH_NOMEM)
+		return ARM_MATH_NOMEM;
 
 	m->transforms = t;
 	m->joint_indexes = j;
@@ -145,8 +149,6 @@ arm_status manipulator_add_joint_ex(Manipulator * m, SE3_Axis axis, float offset
 
 	return ARM_MATH_SUCCESS;
 }
-
-#define LAMBDA_2 1e-4
 
 arm_status manipulator_prepare(Manipulator * m)
 {
@@ -393,6 +395,12 @@ arm_status manipulator_jacobians(Manipulator * m)
 	// compute JE^T*JE
 	math_success(arm_mat_mult_f32(&m->jacobe_T, &m->jacobe, &m->jacobe_T_jacobe));
 
+#define LAMBDA_2 0.0025		// (0.05)^2
+
+	for (i = 0; i < m->num_joints;i++) {
+		MAT_EL(m->jacobe_T_jacobe, i, i) += LAMBDA_2;
+	}
+
 	// compute inv(JE^T*JE)
 retry:
 	arm_status ret = arm_mat_inverse_f32(&m->jacobe_T_jacobe, &m->inv_jacobe_T_jacobe);
@@ -482,7 +490,9 @@ bool manipulator_servo_control(Manipulator * m, float * joint_speeds)
 
 	//mat_print(&dq);
 
-	printf("NORM: %f, %f\n\r", norm, m->servo.threshold);
+	//printf("NORM: %f, %f\n\r", norm, m->servo.threshold);
 	//wait_char();
 	return norm < m->servo.threshold;
 }
+
+

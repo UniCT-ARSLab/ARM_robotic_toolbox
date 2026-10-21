@@ -45,6 +45,7 @@ void SE3_basis_y(SE3_mat * mat, Vector3 * v);
 void SE3_basis_z(SE3_mat * mat, Vector3 * v);
 void SE3_to_rpy(SE3_mat * mat, float * roll, float * pitch, float * yaw);
 arm_status SE3_from_Quat_N(SE3_mat * mat, Quaternion * q);
+arm_status SE3_to_Quat(SE3_mat * mat, Quaternion * q);
 
 void SE3_print(SE3_mat * m);
 

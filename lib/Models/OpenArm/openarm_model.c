@@ -6,6 +6,7 @@
  */
 
 #include "openarm_model.h"
+#include "openarm_driver.h"
 
 Manipulator openarm_model;
 
@@ -18,7 +19,6 @@ Manipulator openarm_model;
 		printf("Not enough memory\n");	\
 		for (;;) ; \
 	}
-
 
 /*
 ┌──────┬─────────────────────────────┬───────┬─────────────────────┬───────────────────────────────────────────────┐
@@ -134,38 +134,108 @@ void openarm_model_servo_drive3(float * xyz)
 	}
 }
 
-
-void openarm_model_servo_drive(SE3_mat * target)
+void openarm_model_servo_drive(SE3_mat * target, float delta_t, float gain, float threshold, bool drive)
 {
 	printf("Target Pose:\n");
 	SE3_print(target);
 
-	printf("Starting Servoing:\n");
-	assert(manipulator_servo_start(&openarm_model,target, 5.0, 0.01) == ARM_MATH_SUCCESS);
+	//printf("Starting Servoing:\n");
+	assert(manipulator_servo_start(&openarm_model, target, gain, threshold) == ARM_MATH_SUCCESS);
 
 	float dq[7];
 
-	float delta_t = 1 / 60.0;
-
 	while (1) {
-		uint32_t st = HAL_GetTick();
+		//uint32_t st = HAL_GetTick();
 		bool ret = manipulator_servo_control(&openarm_model, dq);
 		manipulator_move_joints(&openarm_model, delta_t, dq);
-		uint32_t en = HAL_GetTick();
+		if (drive) {
+			float * j = openarm_model.joint_angles;
+			openarm_set_joints(j, 5 * M_PI);
+		}
+		//uint32_t en = HAL_GetTick();
 		HAL_Delay(delta_t * 1000);
-		//printf("elapsed: %ld ms, %d:", (en - st), ret);
-//		int i;
-//		for (i = 0; i < 7;i++)
-//			printf("%.3f ", dq[i]);
-//		printf("\n");
 		if (ret)
 			break;
-		SE3_mat ee = manipulator_ee_pose(&openarm_model);
+		if (drive) {
+			// read motor position
+		}
+		//SE3_mat ee = manipulator_ee_pose(&openarm_model);
 		//SE3_print(&ee);
-		//wait_char();
 	}
+	if (drive)
+		openarm_set_zero_speed();
 }
 
+
+void openarm_model_segment_drive(SE3_mat * target, t_speed_profile sp, float delta_t, float gain, float threshold, bool drive)
+{
+	Vector3 error;
+	t_motion mot;
+	Quaternion q_start, q_end;
+	float omega;
+
+	SE3_mat ee = manipulator_ee_pose(&openarm_model);
+	SE3_copy_N(&openarm_model.segment_start, &ee);
+
+	SE3_mat * start = &openarm_model.segment_start;
+
+	// the quaternions relative to start and end pose
+	SE3_to_Quat(start, &q_start);
+	SE3_to_Quat(target, &q_end);
+	// the angle between the two quaternions
+	omega = Quaternions_Angle(&q_start, &q_end);
+
+	error.x = SE3(target, 0, 3) - SE3(start, 0, 3);
+	error.y = SE3(target, 1, 3) - SE3(start, 1, 3);
+	error.z = SE3(target, 2, 3) - SE3(start, 2, 3);
+
+	printf("Start Pose:\n");
+	SE3_print(start);
+	Quaternion_print(&q_start);
+
+	printf("Target Pose:\n");
+	SE3_print(target);
+	Quaternion_print(&q_end);
+
+	printf("Quaternion angle = %f\n\r", omega);
+
+	float distance = vector3_norm(&error);
+
+	vr_start_motion(&mot, sp, distance);
+
+	float pos;
+	float dq[7];
+
+	while (!vr_next_motion(&mot, delta_t, &pos)) {
+		// interpolate position
+		float fraction = pos / distance;
+
+		Quaternion virtual_robot_q;
+		Quaternions_Slerp(&virtual_robot_q, &q_start, &q_end, omega, fraction);
+
+		SE3_from_Quat_N(&openarm_model.virtual_robot_temp, &virtual_robot_q);
+		SE3(&openarm_model.virtual_robot_temp, 0, 3) = SE3(start, 0, 3) + error.x * fraction;
+		SE3(&openarm_model.virtual_robot_temp, 1, 3) = SE3(start, 1, 3) + error.y * fraction;
+		SE3(&openarm_model.virtual_robot_temp, 2, 3) = SE3(start, 2, 3) + error.z * fraction;
+
+		//printf("Step %f:", fraction);
+		//Quaternion_print(&virtual_robot_q);
+		//SE3_print(&openarm_model.virtual_robot_temp);
+
+		// start motion
+		assert(manipulator_servo_start(&openarm_model, &openarm_model.virtual_robot_temp, gain, threshold) == ARM_MATH_SUCCESS);
+		// make motion
+		manipulator_servo_control(&openarm_model, dq);
+		manipulator_move_joints(&openarm_model, delta_t, dq);
+		if (drive) {
+			float * j = openarm_model.joint_angles;
+			openarm_set_joints(j, 5 * M_PI);
+		}
+		//uint32_t en = HAL_GetTick();
+		HAL_Delay(delta_t * 1000);
+	}
+	openarm_model_servo_drive(target, delta_t, gain, threshold, drive);
+}
 
 void openarm_model_test(void)
 {

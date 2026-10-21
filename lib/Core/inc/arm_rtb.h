@@ -8,6 +8,7 @@
 #ifndef LIB_CORE_INC_ARM_RTB_H_
 #define LIB_CORE_INC_ARM_RTB_H_
 
+#include "vector3.h"
 #include "so3.h"
 #include "se3.h"
 #include "manipulator.h"
