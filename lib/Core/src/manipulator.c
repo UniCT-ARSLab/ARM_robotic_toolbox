@@ -235,6 +235,17 @@ arm_status manipulator_prepare(Manipulator * m)
 	return ret;
 }
 
+void manipulator_get_joints(Manipulator * m, float * joints)
+{
+	int i;
+	for (i = 0; i < m->num_joints;i++) {
+		float a = m->joint_angles[i];
+		a = (a - m->joint_offsets[i]) * m->joint_signs[i];
+
+		joints[i] = a;
+	}
+}
+
 
 arm_status manipulator_set_joints(Manipulator * m, float * joints)
 {

@@ -10,7 +10,7 @@
 
 #include <stdbool.h>
 #include "arm_rtb.h"
-
+#include "virtual_robot.h"
 //#define USE_SVD
 
 typedef arm_matrix_instance_f32 	Jacob_mat;
@@ -21,6 +21,17 @@ typedef struct {
 	float threshold;
 	float gain;
 } t_servo_info;
+
+typedef struct {
+	SE3_mat *target;
+	Quaternion q_start, q_end;
+	float omega;
+	float distance;
+	t_motion mot;
+	Vector3 error;
+	float threshold;
+	float gain;
+} t_segment_info;
 
 typedef struct {
 	int	num_links;
@@ -50,6 +61,7 @@ typedef struct {
 	float * S_inv;
 
 	t_servo_info servo;
+	t_segment_info segment;
 
 } Manipulator;
 
@@ -61,6 +73,7 @@ arm_status manipulator_add_R_link(Manipulator * m, float angle, SE3_Axis axis);
 arm_status manipulator_add_joint(Manipulator * m, SE3_Axis axis);
 arm_status manipulator_add_joint_ex(Manipulator * m, SE3_Axis axis, float offset, float sign);
 arm_status manipulator_set_joints(Manipulator * m, float * joints);
+void manipulator_get_joints(Manipulator * m, float * joints);
 arm_status manipulator_move_joints(Manipulator * m, float delta_t, float * joint_speeds);
 arm_status manipulator_compute_transform(Manipulator * m);
 SE3_mat manipulator_ee_pose(Manipulator * m);
