@@ -200,8 +200,8 @@ void openarm_model_servo_drive(t_openarm_robot * robot, SE3_mat * target, float 
 {
 	Manipulator * model = &robot->model;
 
-	printf("Target Pose:\n");
-	SE3_print(target);
+//	printf("Target Pose:\n");
+//	SE3_print(target);
 
 	//printf("Starting Servoing:\n");
 	assert(manipulator_servo_start(model, target, gain, threshold) == ARM_MATH_SUCCESS);
@@ -280,6 +280,7 @@ void openarm_model_segment_drive(t_openarm_robot * robot, SE3_mat * target, t_sp
 	uint32_t last_tm = HAL_GetTick();
 	while (!vr_next_motion(&mot, delta_t, &pos)) {
 		uint32_t tm = HAL_GetTick();
+		CAN_process(robot->canif);
 		// interpolate position
 		float fraction = pos / distance;
 
@@ -319,6 +320,7 @@ void openarm_model_segment_drive(t_openarm_robot * robot, SE3_mat * target, t_sp
 			float j[8];
 			manipulator_get_joints(model, j);
 			openarm_set_joints(robot->canif, j, 10 * M_PI);
+			openarm_get_joints(robot->canif);
 		}
 		HAL_Delay(delay_ticks);
 	}
@@ -345,15 +347,15 @@ void openarm_model_segment_start(t_openarm_robot * robot, SE3_mat * target, t_sp
 	model->segment.error.y = SE3(target, 1, 3) - SE3(start, 1, 3);
 	model->segment.error.z = SE3(target, 2, 3) - SE3(start, 2, 3);
 
-	printf("Start Pose:\n");
-	SE3_print(start);
-	Quaternion_print(&model->segment.q_start);
-
-	printf("Target Pose:\n");
-	SE3_print(target);
-	Quaternion_print(&model->segment.q_end);
-
-	printf("Quaternion angle = %f\n\r", model->segment.omega);
+//	printf("Start Pose:\n");
+//	SE3_print(start);
+//	Quaternion_print(&model->segment.q_start);
+//
+//	printf("Target Pose:\n");
+//	SE3_print(target);
+//	Quaternion_print(&model->segment.q_end);
+//
+//	printf("Quaternion angle = %f\n\r", model->segment.omega);
 
 	model->segment.distance = vector3_norm(&model->segment.error);
 
@@ -365,6 +367,8 @@ void openarm_model_segment_start(t_openarm_robot * robot, SE3_mat * target, t_sp
 
 }
 
+//#define VERBOSE
+
 bool openarm_model_segment_step(t_openarm_robot * robot, float delta_t, bool drive)
 {
 	float pos;
@@ -375,6 +379,8 @@ bool openarm_model_segment_step(t_openarm_robot * robot, float delta_t, bool dri
 	SE3_mat * start = &model->segment_start;
 
 	if (!vr_next_motion(mot, delta_t, &pos)) {
+		CAN_process(robot->canif);
+
 		// interpolate position
 		float fraction = pos / model->segment.distance;
 
@@ -388,10 +394,11 @@ bool openarm_model_segment_step(t_openarm_robot * robot, float delta_t, bool dri
 		SE3(&model->virtual_robot_temp, 1, 3) = SE3(start, 1, 3) + model->segment.error.y * fraction;
 		SE3(&model->virtual_robot_temp, 2, 3) = SE3(start, 2, 3) + model->segment.error.z * fraction;
 
-		//printf("Step %f:", fraction);
-		//Quaternion_print(&virtual_robot_q);
-		//SE3_print(&openarm_model.virtual_robot_temp);
-
+#ifdef VERBOSE
+		printf("Step %f:", fraction);
+		Quaternion_print(&virtual_robot_q);
+		//SE3_print(&model->virtual_robot_temp);
+#endif
 		//printf("Elapsed  %f, Expected %f, Delay Ticks %d, %f, %f\n\r", dt, delta_t, delay_ticks, pos, distance);
 
 		// start motion
@@ -403,6 +410,7 @@ bool openarm_model_segment_step(t_openarm_robot * robot, float delta_t, bool dri
 			float j[8];
 			manipulator_get_joints(model, j);
 			openarm_set_joints(robot->canif, j, 10 * M_PI);
+			openarm_get_joints(robot->canif);
 		}
 		return false;
 	}
